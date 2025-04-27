@@ -11,14 +11,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       config={{
         loginMethods: ['wallet'],
         embeddedWallets: {
-          createOnLogin: 'all-users', // Creates embedded wallets for non-crypto users
+          createOnLogin: 'all-users',
         },
         appearance: {
           theme: 'dark',
-          accentColor: '#9945FF', // Solana purple
+          accentColor: '#9945FF',
         },
-        // Removed additionalChains as it is not a valid property of PrivyClientConfig
-        // Removed walletConnectors as it is not a valid property of PrivyClientConfig
       }}
     >
       <App />
