@@ -40,6 +40,10 @@
               {
                 "kind": "account",
                 "path": "author"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
               }
             ]
           }
@@ -61,6 +65,10 @@
         },
         {
           "name": "content_hash",
+          "type": "string"
+        },
+        {
+          "name": "nonce",
           "type": "string"
         }
       ]

@@ -11,6 +11,7 @@ pub mod mythforge {
         ctx: Context<InitializeSnippet>,
         title: String,
         content_hash: String,
+        nonce: String,
     ) -> Result<()> {
         let snippet = &mut ctx.accounts.snippet;
         snippet.author = *ctx.accounts.author.key;
@@ -52,12 +53,13 @@ pub mod mythforge {
 }
 
 #[derive(Accounts)]
+#[instruction(title: String, content_hash: String, nonce: String)]
 pub struct InitializeSnippet<'info> {
     #[account(
         init,
         payer = author,
-        space = 8 + 32 + 64 + 32 + 1, // Discriminator + Pubkey + Title (64) + Hash (32) + Bool
-        seeds = [b"snippet", author.key().as_ref()],
+        space = 8 + 32 + (4 + 64) + (4 + 32) + 1, // Discriminator + Pubkey + Title (4+64) + ContentHash (4+32) + Bool
+        seeds = [b"snippet", author.key().as_ref(), nonce.as_bytes()],
         bump
     )]
     pub snippet: Account<'info, Snippet>,
@@ -71,9 +73,9 @@ pub struct MintNFT<'info> {
     #[account(mut, has_one = author)]
     pub snippet: Account<'info, Snippet>,
     #[account(mut)]
-    pub nft_mint: Account<'info, Mint>, // Wrapped in anchor_lang::Account
+    pub nft_mint: Account<'info, Mint>,
     #[account(mut)]
-    pub nft_account: Account<'info, TokenAccount>, // Wrapped in anchor_lang::Account
+    pub nft_account: Account<'info, TokenAccount>,
     #[account(mut)]
     pub author: Signer<'info>,
     pub authority: Signer<'info>,
@@ -84,7 +86,7 @@ pub struct MintNFT<'info> {
 #[derive(Accounts)]
 pub struct ReadSnippet<'info> {
     pub snippet: Account<'info, Snippet>,
-    pub nft_account: Account<'info, TokenAccount>, // Wrapped in anchor_lang::Account
+    pub nft_account: Account<'info, TokenAccount>,
 }
 
 #[account]
