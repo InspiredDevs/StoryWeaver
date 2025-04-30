@@ -17,6 +17,7 @@ pub mod mythforge {
         snippet.author = *ctx.accounts.author.key;
         snippet.title = title;
         snippet.content_hash = content_hash;
+        snippet.nonce = nonce; // Use nonce
         snippet.nft_minted = false;
         Ok(())
     }
@@ -58,7 +59,7 @@ pub struct InitializeSnippet<'info> {
     #[account(
         init,
         payer = author,
-        space = 8 + 32 + (4 + 64) + (4 + 32) + 1, // Discriminator + Pubkey + Title (4+64) + ContentHash (4+32) + Bool
+        space = 8 + 32 + (4 + 64) + (4 + 32) + (4 + 32) + 1, // Discriminator + Pubkey + Title (4+64) + ContentHash (4+32) + Nonce (4+32) + Bool
         seeds = [b"snippet", author.key().as_ref(), nonce.as_bytes()],
         bump
     )]
@@ -94,6 +95,7 @@ pub struct Snippet {
     pub author: Pubkey,
     pub title: String,
     pub content_hash: String,
+    pub nonce: String,
     pub nft_minted: bool,
 }
 

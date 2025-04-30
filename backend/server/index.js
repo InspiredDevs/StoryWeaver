@@ -57,6 +57,7 @@ async function startServer() {
             instructionDiscriminator: { array: { type: "u8", len: 8 } },
             title: "string",
             contentHash: "string",
+            nonce: "string",
           },
         };
 
@@ -65,6 +66,7 @@ async function startServer() {
           instructionDiscriminator: [140, 135, 194, 182, 171, 195, 145, 31], // From mythforge.json
           title,
           contentHash,
+          nonce,
         };
         const serializedData = serialize(instructionDataSchema, instructionData);
 

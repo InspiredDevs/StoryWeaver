@@ -190,6 +190,10 @@
             "type": "string"
           },
           {
+            "name": "nonce",
+            "type": "string"
+          },
+          {
             "name": "nft_minted",
             "type": "bool"
           }
