@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection } from '@solana/web3.js';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import WalletButton from './components/WalletButton';
-import Editor from './components/Editor';
+import Editor from './pages/Editor';
 import Reader from './pages/Reader';
-import MintNFT from './pages/Landing';
-import Dashboard from './pages/Home';
+import MintNFT from './pages/MintNFT';
+import Dashboard from './pages/Dashboard';
 
 function App() {
   const [publicKey, setPublicKey] = useState<string | null>(null);

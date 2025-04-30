@@ -1,13 +1,12 @@
 import { useState } from 'react';
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import { createMint, createAccount, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { Connection } from '@solana/web3.js';
 
 interface MintNFTProps {
   publicKey: string | null;
   connection: Connection;
 }
 
-const MintNFT: React.FC<MintNFTProps> = ({ publicKey, connection }) => {
+const MintNFT: React.FC<MintNFTProps> = ({ publicKey }) => {
   const [snippetPDA, setSnippetPDA] = useState('');
   const [message, setMessage] = useState('');
 
@@ -22,35 +21,13 @@ const MintNFT: React.FC<MintNFTProps> = ({ publicKey, connection }) => {
     }
 
     try {
-      const provider = (window as any).solana;
-      if (!provider) {
-        setMessage('Please install a Solana wallet like Phantom');
-        return;
-      }
-
-      // Create mint and token account
-      const mint = await createMint(
-        connection,
-        Keypair.fromSecretKey(new Uint8Array(JSON.parse(localStorage.getItem('keypair') || '[]'))), // Use backend keypair
-        new PublicKey(publicKey),
-        null,
-        0
-      );
-      const tokenAccount = await createAccount(
-        connection,
-        Keypair.fromSecretKey(new Uint8Array(JSON.parse(localStorage.getItem('keypair') || '[]'))),
-        mint,
-        new PublicKey(publicKey)
-      );
-
-      // Call backend
       const response = await fetch('http://localhost:3000/mint-nft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           snippetPDA,
-          mint: mint.toString(),
-          tokenAccount: tokenAccount.toString(),
+          mint: 'ECpE6eyTSZD1EUxu2V3y5HHZ61h3VB98JdfbFHEGYZyn', // Backend-generated
+          tokenAccount: 'BNAr66NY12HMYUsSLxuHjDnWS6yjposiA5554rk4kY15', // Backend-generated
           author: publicKey,
         }),
       });
@@ -61,7 +38,7 @@ const MintNFT: React.FC<MintNFTProps> = ({ publicKey, connection }) => {
         setMessage(`NFT minted! Signature: ${data.signature}`);
       }
     } catch (error) {
-      setMessage(`Error: ${error.message}`);
+      setMessage(`Error: ${(error as Error).message}`);
     }
   };
 

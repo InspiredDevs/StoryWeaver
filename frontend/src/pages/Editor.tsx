@@ -40,7 +40,7 @@ const Editor: React.FC<EditorProps> = ({ publicKey }) => {
         setContent('');
       }
     } catch (error) {
-      setMessage(`Error: ${error.message}`);
+      setMessage(`Error: ${(error as Error).message}`);
     }
   };
 

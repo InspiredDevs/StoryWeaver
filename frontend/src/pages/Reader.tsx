@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Snippet } from '../types';
 
 interface ReaderProps {
   publicKey: string | null;
@@ -7,7 +8,7 @@ interface ReaderProps {
 const Reader: React.FC<ReaderProps> = ({ publicKey }) => {
   const [snippetPDA, setSnippetPDA] = useState('');
   const [tokenAccount, setTokenAccount] = useState('');
-  const [snippet, setSnippet] = useState<any>(null);
+  const [snippet, setSnippet] = useState<Snippet | null>(null);
   const [message, setMessage] = useState('');
 
   const readSnippet = async () => {
@@ -34,7 +35,7 @@ const Reader: React.FC<ReaderProps> = ({ publicKey }) => {
         setMessage('Snippet loaded!');
       }
     } catch (error) {
-      setMessage(`Error: ${error.message}`);
+      setMessage(`Error: ${(error as Error).message}`);
     }
   };
 

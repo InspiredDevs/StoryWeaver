@@ -1,20 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { Snippet } from '../types';
 
 interface DashboardProps {
   publicKey: string | null;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ publicKey }) => {
-  const [snippets, setSnippets] = useState<any[]>([]);
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    if (publicKey) {
-      fetchSnippets();
-    }
-  }, [publicKey]);
-
-  const fetchSnippets = async () => {
+  const fetchSnippets = useCallback(async () => {
     if (!publicKey) {
       setMessage('Please connect your wallet');
       return;
@@ -26,18 +21,29 @@ const Dashboard: React.FC<DashboardProps> = ({ publicKey }) => {
       if (data.error) {
         setMessage(`Error: ${data.error}`);
       } else {
-        const snippets = await Promise.all(
-          data.collections.includes('snippets')
-            ? (await (await fetch('mongodb://localhost:27017/storyweaver')).json()).snippets.find({ author: publicKey }).toArray()
-            : []
-        );
-        setSnippets(snippets);
+        // Mock data, replace with real API
+        const userSnippets: Snippet[] = [
+          {
+            title: 'Test Snippet 3',
+            contentHash: 'ipfs://test-hash-3',
+            snippetPDA: 'TBD',
+            nftMinted: false,
+            author: publicKey,
+          },
+        ].filter(s => s.author === publicKey);
+        setSnippets(userSnippets);
         setMessage('Snippets loaded!');
       }
     } catch (error) {
-      setMessage(`Error: ${error.message}`);
+      setMessage(`Error: ${(error as Error).message}`);
     }
-  };
+  }, [publicKey]);
+
+  useEffect(() => {
+    if (publicKey) {
+      fetchSnippets();
+    }
+  }, [publicKey, fetchSnippets]);
 
   return (
     <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
