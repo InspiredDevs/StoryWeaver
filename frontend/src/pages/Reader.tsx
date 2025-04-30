@@ -1,45 +1,77 @@
-import { motion } from 'framer-motion';
-import { usePrivy } from '@privy-io/react-auth';
+import { useState } from 'react';
 
-export default function Reader() {
-  const { authenticated, login } = usePrivy();
+interface ReaderProps {
+  publicKey: string | null;
+}
+
+const Reader: React.FC<ReaderProps> = ({ publicKey }) => {
+  const [snippetPDA, setSnippetPDA] = useState('');
+  const [tokenAccount, setTokenAccount] = useState('');
+  const [snippet, setSnippet] = useState<any>(null);
+  const [message, setMessage] = useState('');
+
+  const readSnippet = async () => {
+    if (!publicKey) {
+      setMessage('Please connect your wallet');
+      return;
+    }
+    if (!snippetPDA || !tokenAccount) {
+      setMessage('Please enter Snippet PDA and Token Account');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:3000/read-snippet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snippetPDA, tokenAccount }),
+      });
+      const data = await response.json();
+      if (data.error) {
+        setMessage(`Error: ${data.error}`);
+      } else {
+        setSnippet(data.snippet);
+        setMessage('Snippet loaded!');
+      }
+    } catch (error) {
+      setMessage(`Error: ${error.message}`);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <motion.div
-        className="max-w-3xl w-full bg-[#1A1A2E] rounded-lg p-6 text-white"
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5 }}
+    <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
+      <h2 className="text-2xl font-bold text-teal-400 mb-4">Read Story Snippet</h2>
+      <input
+        type="text"
+        placeholder="Snippet PDA"
+        value={snippetPDA}
+        onChange={(e) => setSnippetPDA(e.target.value)}
+        className="w-full p-2 mb-4 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400"
+      />
+      <input
+        type="text"
+        placeholder="Token Account"
+        value={tokenAccount}
+        onChange={(e) => setTokenAccount(e.target.value)}
+        className="w-full p-2 mb-4 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400"
+      />
+      <button
+        onClick={readSnippet}
+        className="px-6 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-400 transition"
       >
-        <h2 className="text-3xl font-bold mb-6 text-[#9945FF] flex items-center">
-          <img src="/quill-placeholder.png" alt="Quill" className="w-8 h-8 mr-2" />
-          Chapter 1: Stakehaven
-        </h2>
-        {!authenticated && (
-          <motion.button
-            className="w-full p-3 mb-4 bg-[#00D1FF] rounded-lg hover:bg-[#9945FF]"
-            whileHover={{ scale: 1.05 }}
-            onClick={login}
-          >
-            Connect Wallet
-          </motion.button>
-        )}
-        <div className="p-4 bg-gray-800 rounded-lg">
-          <p className="text-lg">
-            In Stakehaven, the chain glowed under Valora’s touch, binding the realm’s fate to her will...
-          </p>
-          <p className="text-sm mt-2 italic">Own this chapter for 0.05 SOL</p>
+        Read Snippet
+      </button>
+      {message && <p className="mt-4 text-teal-200">{message}</p>}
+      {snippet && (
+        <div className="mt-4 p-4 bg-gray-700 rounded-lg">
+          <h3 className="text-lg font-bold">{snippet.title}</h3>
+          <p>Content Hash: {snippet.contentHash}</p>
+          <p>Author: {snippet.author}</p>
+          <p>NFT Minted: {snippet.nftMinted ? 'Yes' : 'No'}</p>
         </div>
-        <motion.button
-          className="w-full p-3 mt-4 bg-[#9945FF] rounded-lg hover:bg-[#00D1FF] font-semibold"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          disabled={!authenticated}
-        >
-          Buy NFT
-        </motion.button>
-      </motion.div>
+      )}
     </div>
   );
-}
+};
+
+export default Reader;

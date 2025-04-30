@@ -1,36 +1,43 @@
-import { usePrivy } from '@privy-io/react-auth';
-import { useSolanaWallets } from '@privy-io/react-auth/solana';
+import { useState } from 'react';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import WalletButton from './components/WalletButton';
+import Editor from './components/Editor';
+import Reader from './pages/Reader';
+import MintNFT from './pages/Landing';
+import Dashboard from './pages/Home';
 
 function App() {
-  const { login, authenticated, logout } = usePrivy();
-  const { wallets } = useSolanaWallets();
-
-  const walletAddress = wallets[0]?.address;
+  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const quicknodeUrl = import.meta.env.VITE_QUICKNODE_URL;
+  const connection = new Connection(quicknodeUrl, 'confirmed');
 
   return (
+    <Router>
+      <div className="min-h-screen bg-gray-900 text-white font-sans">
+        {/* Navbar */}
+        <nav className="bg-teal-800 p-4 flex justify-between items-center">
+          <div className="flex space-x-4">
+            <Link to="/" className="text-teal-200 hover:text-teal-100">Editor</Link>
+            <Link to="/reader" className="text-teal-200 hover:text-teal-100">Reader</Link>
+            <Link to="/mint" className="text-teal-200 hover:text-teal-100">Mint NFT</Link>
+            <Link to="/dashboard" className="text-teal-200 hover:text-teal-100">Dashboard</Link>
+          </div>
+          <WalletButton publicKey={publicKey} setPublicKey={setPublicKey} connection={connection} />
+        </nav>
 
-  <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-4">
-    <h1 className="text-4xl font-bold text-[#9945FF] mb-4">StoryWeaver Wallet Test</h1>
-    {!authenticated || !walletAddress ? (
-      <button
-        className="px-6 py-3 bg-[#9945FF] rounded-lg hover:bg-[#00D1FF]"
-        onClick={login}
-      >
-        Connect Solana Wallet
-      </button>
-    ) : (
-      <div className="flex flex-col items-center gap-4">
-        <p>Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}</p>
-        <button
-          className="px-6 py-3 bg-[#FF4567] rounded-lg hover:bg-[#FF7888]"
-          onClick={logout}
-        >
-          Disconnect Wallet
-        </button>
+        {/* Main Content */}
+        <div className="p-6 max-w-7xl mx-auto">
+          <Routes>
+            <Route path="/" element={<Editor publicKey={publicKey} />} />
+            <Route path="/reader" element={<Reader publicKey={publicKey} />} />
+            <Route path="/mint" element={<MintNFT publicKey={publicKey} connection={connection} />} />
+            <Route path="/dashboard" element={<Dashboard publicKey={publicKey} />} />
+          </Routes>
+        </div>
       </div>
-    )}
-  </div>
-);
+    </Router>
+  );
 }
 
 export default App;
