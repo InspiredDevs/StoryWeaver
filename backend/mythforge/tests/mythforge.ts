@@ -1,16 +1,293 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { Mythforge } from "../target/types/mythforge";
+import * as anchor from '@coral-xyz/anchor';
+import { Program } from '@coral-xyz/anchor';
+import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL, Connection } from '@solana/web3.js';
+import { TOKEN_PROGRAM_ID, createMint, createAccount } from '@solana/spl-token';
+import { Mythforge } from '../target/types/mythforge';
+import { assert } from 'chai';
 
-describe("mythforge", () => {
-  // Configure the client to use the local cluster.
-  anchor.setProvider(anchor.AnchorProvider.env());
+async function withRetry<T>(fn: () => Promise<T>, retries: number = 5, delayMs: number = 2000): Promise<T> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === retries - 1) throw error;
+      console.warn(`Retry ${i + 1}/${retries} failed: ${error.message}`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error('Retry logic failed');
+}
 
-  const program = anchor.workspace.mythforge as Program<Mythforge>;
+describe('mythforge', () => {
+  // Use Devnet provider
+  const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+  const provider = new anchor.AnchorProvider(connection, anchor.Wallet.local(), {
+    commitment: 'confirmed',
+    preflightCommitment: 'confirmed'
+  });
+  anchor.setProvider(provider);
+  const program = anchor.workspace.Mythforge as Program<Mythforge>;
 
-  it("Is initialized!", async () => {
-    // Add your test here.
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
+  const author = provider.wallet;
+  const title = 'Test Snippet';
+  const contentHash = 'QmTestHash1234567890abcdef1234567890abcdef12';
+  const name = 'StoryWeaver NFT';
+  const symbol = 'STORY';
+  const uri = 'https://storyweaver.app/nft/test.json';
+
+  let snippetPDA: PublicKey;
+  let nftMint: Keypair;
+  let nftAccount: PublicKey;
+  let feeAccount: Keypair;
+  let platformWallet: Keypair;
+  let metadataPDA: PublicKey;
+
+  before(async () => {
+    // Verify connection
+    try {
+      const version = await withRetry(() => connection.getVersion());
+      console.log(`Connected to Devnet: ${JSON.stringify(version)}`);
+    } catch (error) {
+      console.error('Failed to connect to Devnet:', error);
+      throw new Error('Devnet connection failed. Check network or try again.');
+    }
+
+    // Check wallet balance
+    try {
+      const balance = await withRetry(() => provider.connection.getBalance(author.publicKey));
+      console.log(`Author wallet: ${author.publicKey.toBase58()}`);
+      console.log(`Author wallet balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+      assert(balance >= 1 * LAMPORTS_PER_SOL, 'Author wallet needs at least 1 SOL');
+    } catch (error) {
+      console.error('Failed to get wallet balance:', error);
+      throw error;
+    }
+
+    // Derive snippet PDA
+    try {
+      [snippetPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('snippet'), author.publicKey.toBuffer(), Buffer.from(title)],
+        program.programId
+      );
+      console.log(`Snippet PDA: ${snippetPDA.toBase58()}`);
+    } catch (error) {
+      console.error('Failed to derive snippet PDA:', error);
+      throw error;
+    }
+
+    // Create NFT mint
+    nftMint = Keypair.generate();
+    try {
+      await withRetry(() =>
+        createMint(
+          provider.connection,
+          author.payer,
+          author.publicKey,
+          null,
+          0,
+          nftMint
+        )
+      );
+      console.log(`NFT mint created: ${nftMint.publicKey.toBase58()}`);
+    } catch (error) {
+      console.error('Failed to create mint:', error);
+      throw error;
+    }
+
+    // Create NFT token account
+    try {
+      nftAccount = await withRetry(() =>
+        createAccount(
+          provider.connection,
+          author.payer,
+          nftMint.publicKey,
+          author.publicKey,
+          Keypair.generate()
+        )
+      );
+      console.log(`NFT token account created: ${nftAccount.toBase58()}`);
+    } catch (error) {
+      console.error('Failed to create token account:', error);
+      throw error;
+    }
+
+    // Load fee and platform accounts from mythforge/keys/
+    try {
+      feeAccount = Keypair.fromSecretKey(
+        Uint8Array.from(JSON.parse(require('fs').readFileSync('./keys/fee_account.json')))
+      );
+      platformWallet = Keypair.fromSecretKey(
+        Uint8Array.from(JSON.parse(require('fs').readFileSync('./keys/platform_wallet.json')))
+      );
+      console.log(`Fee account: ${feeAccount.publicKey.toBase58()}`);
+      console.log(`Platform wallet: ${platformWallet.publicKey.toBase58()}`);
+    } catch (error) {
+      console.error('Failed to load keypairs from mythforge/keys/:', error);
+      throw error;
+    }
+
+    // Derive metadata PDA
+    const metadataProgram = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+    try {
+      [metadataPDA] = await PublicKey.findProgramAddress(
+        [
+          Buffer.from('metadata'),
+          metadataProgram.toBuffer(),
+          nftMint.publicKey.toBuffer(),
+        ],
+        metadataProgram
+      );
+      console.log(`Metadata PDA: ${metadataPDA.toBase58()}`);
+    } catch (error) {
+      console.error('Failed to derive metadata PDA:', error);
+      throw error;
+    }
+  });
+
+  it('Initializes a snippet', async () => {
+    try {
+      await program.methods
+        .initializeSnippet(title, contentHash)
+        .accounts({
+          snippet: snippetPDA,
+          author: author.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+      console.log('Snippet initialized');
+    } catch (error) {
+      console.error('Failed to initialize snippet:', error);
+      throw error;
+    }
+
+    const snippet = await program.account.snippet.fetch(snippetPDA);
+    assert.equal(snippet.author.toBase58(), author.publicKey.toBase58());
+    assert.equal(snippet.title, title);
+    assert.equal(snippet.contentHash, contentHash);
+    assert.equal(snippet.nftMinted, false);
+  });
+
+  it('Mints an NFT with 5% royalty', async () => {
+    try {
+      await program.methods
+        .mintNft(name, symbol, uri)
+        .accounts({
+          snippet: snippetPDA,
+          nftMint: nftMint.publicKey,
+          nftAccount: nftAccount,
+          metadata: metadataPDA,
+          feeAccount: feeAccount.publicKey,
+          platformWallet: platformWallet.publicKey,
+          author: author.publicKey,
+          authority: author.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          metadataProgram: new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'),
+          systemProgram: SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        })
+        .rpc();
+      console.log('NFT minted');
+    } catch (error) {
+      console.error('Failed to mint NFT:', error);
+      if (error.logs) {
+        console.error('Transaction logs:', error.logs);
+      }
+      throw error;
+    }
+
+    const snippet = await program.account.snippet.fetch(snippetPDA);
+    assert.equal(snippet.nftMinted, true);
+
+    const nftAccountInfo = await provider.connection.getTokenAccountBalance(nftAccount);
+    assert.equal(nftAccountInfo.value.uiAmount, 1);
+
+    const platformBalance = await provider.connection.getBalance(platformWallet.publicKey);
+    console.log(`Platform wallet balance: ${platformBalance / LAMPORTS_PER_SOL} SOL`);
+    assert.isAtLeast(platformBalance, 4_000_000_000); // 4 SOL
+  });
+
+  it('Reads a snippet with NFT ownership', async () => {
+    try {
+      await program.methods
+        .readSnippet()
+        .accounts({
+          snippet: snippetPDA,
+          nftAccount: nftAccount,
+        })
+        .rpc();
+      console.log('Snippet read with NFT ownership');
+    } catch (error) {
+      console.error('Failed to read snippet:', error);
+      if (error.logs) {
+        console.error('Transaction logs:', error.logs);
+      }
+      throw error;
+    }
+  });
+
+  it('Fails to read without NFT ownership', async () => {
+    const emptyAccount = await createAccount(
+      provider.connection,
+      author.payer,
+      nftMint.publicKey,
+      author.publicKey,
+      Keypair.generate()
+    );
+
+    try {
+      await program.methods
+        .readSnippet()
+        .accounts({
+          snippet: snippetPDA,
+          nftAccount: emptyAccount,
+        })
+        .rpc();
+      assert.fail('Should have failed');
+    } catch (error) {
+      console.error('Expected error for reading without NFT:', error.message);
+      assert.include(error.message, 'User does not own the required NFT');
+    }
+  });
+
+  it('Fails to mint with insufficient fee', async () => {
+    const newSnippetPDA = (await PublicKey.findProgramAddress(
+      [Buffer.from('snippet'), author.publicKey.toBuffer(), Buffer.from('New Snippet')],
+      program.programId
+    ))[0];
+
+    await program.methods
+      .initializeSnippet('New Snippet', contentHash)
+      .accounts({
+        snippet: newSnippetPDA,
+        author: author.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const emptyFeeAccount = Keypair.generate();
+
+    try {
+      await program.methods
+        .mintNft(name, symbol, uri)
+        .accounts({
+          snippet: newSnippetPDA,
+          nftMint: nftMint.publicKey,
+          nftAccount: nftAccount,
+          metadata: metadataPDA,
+          feeAccount: emptyFeeAccount.publicKey,
+          platformWallet: platformWallet.publicKey,
+          author: author.publicKey,
+          authority: author.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          metadataProgram: new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'),
+          systemProgram: SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        })
+      .rpc();
+      assert.fail('Should have failed');
+    } catch (error) {
+      console.error('Expected error for insufficient fee:', error.message);
+      assert.include(error.message, 'Insufficient mint fee');
+    }
   });
 });
