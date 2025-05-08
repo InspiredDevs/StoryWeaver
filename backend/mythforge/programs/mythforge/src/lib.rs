@@ -17,6 +17,7 @@ pub mod mythforge {
         snippet.title = title;
         snippet.content_hash = content_hash;
         snippet.nft_minted = false;
+        snippet.nft_mint = Pubkey::default(); // Initialize with default mint
         Ok(())
     }
 
@@ -28,6 +29,13 @@ pub mod mythforge {
     ) -> Result<()> {
         let snippet = &mut ctx.accounts.snippet;
         require!(!snippet.nft_minted, MythforgeError::NFTAlreadyMinted);
+
+        // Check minimum fee (0.1 SOL = 100,000,000 lamports)
+        let fee_account_balance = ctx.accounts.fee_account.lamports();
+        require!(
+            fee_account_balance >= 100_000_000,
+            MythforgeError::InsufficientMintFee
+        );
 
         // Mint NFT to author's token account
         token::mint_to(
@@ -62,7 +70,7 @@ pub mod mythforge {
             mint: ctx.accounts.nft_mint.key(),
             mint_authority: ctx.accounts.authority.key(),
             payer: ctx.accounts.author.key(),
-            update_authority: (ctx.accounts.author.key(), true), // Tuple with Pubkey and signer status
+            update_authority: (ctx.accounts.author.key(), true),
             system_program: ctx.accounts.system_program.key(),
             rent: Some(ctx.accounts.rent.key()),
         }
@@ -93,6 +101,7 @@ pub mod mythforge {
         anchor_lang::solana_program::program::invoke(&metadata_instruction, &accounts)?;
 
         snippet.nft_minted = true;
+        snippet.nft_mint = ctx.accounts.nft_mint.key(); // Store the mint key
         Ok(())
     }
 
@@ -101,6 +110,10 @@ pub mod mythforge {
         require!(snippet.nft_minted, MythforgeError::NFTNotMinted);
 
         let nft_account = &ctx.accounts.nft_account;
+        require!(
+            nft_account.mint == snippet.nft_mint,
+            MythforgeError::InvalidNFT
+        );
         require!(
             nft_account.amount >= 1,
             MythforgeError::NoNFTOwnership
@@ -115,7 +128,7 @@ pub struct InitializeSnippet<'info> {
     #[account(
         init,
         payer = author,
-        space = 8 + 32 + 4 + title.len() + 4 + content_hash.len() + 1,
+        space = 8 + 32 + 4 + title.len() + 4 + content_hash.len() + 1 + 32,
         seeds = [b"snippet", author.key().as_ref(), title.as_bytes()],
         bump
     )]
@@ -154,7 +167,7 @@ pub struct MintNft<'info> {
 pub struct ReadSnippet<'info> {
     pub snippet: Account<'info, Snippet>,
     #[account(
-        constraint = nft_account.mint == snippet.key() @ MythforgeError::InvalidNFT
+        constraint = nft_account.mint == snippet.nft_mint @ MythforgeError::InvalidNFT
     )]
     pub nft_account: Account<'info, TokenAccount>,
 }
@@ -165,6 +178,7 @@ pub struct Snippet {
     pub title: String,
     pub content_hash: String,
     pub nft_minted: bool,
+    pub nft_mint: Pubkey, // Store the NFT mint key
 }
 
 #[error_code]
@@ -182,3 +196,5 @@ pub enum MythforgeError {
     #[msg("Failed to create metadata account")]
     MetadataCreationFailed,
 }
+
+const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
