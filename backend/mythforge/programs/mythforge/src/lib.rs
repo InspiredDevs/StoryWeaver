@@ -11,11 +11,12 @@ declare_id!("4kHscyfUExLgCVbDF2ivdKicf4NC9tp1SX88FGxnb7GW");
 pub mod mythforge {
     use super::*;
 
-    pub fn initialize_snippet(ctx: Context<InitializeSnippet>, title: String, content_hash: String) -> Result<()> {
+    pub fn initialize_snippet(ctx: Context<InitializeSnippet>, title: String, content_hash: String, nonce: String) -> Result<()> {
         let snippet = &mut ctx.accounts.snippet;
         snippet.author = ctx.accounts.author.key();
         snippet.title = title;
         snippet.content_hash = content_hash;
+        snippet.nonce = nonce;
         snippet.nft_minted = false;
         snippet.nft_mint = Pubkey::default(); // Initialize with default mint
         Ok(())
@@ -123,13 +124,13 @@ pub mod mythforge {
 }
 
 #[derive(Accounts)]
-#[instruction(title: String, content_hash: String)]
+#[instruction(title: String, content_hash: String, nonce: String)]
 pub struct InitializeSnippet<'info> {
     #[account(
         init,
         payer = author,
-        space = 8 + 32 + 4 + title.len() + 4 + content_hash.len() + 1 + 32,
-        seeds = [b"snippet", author.key().as_ref(), title.as_bytes()],
+        space = 8 + 32 + 4 + title.len() + 4 + content_hash.len() + 4 + nonce.len() + 1 + 32,
+        seeds = [b"snippet", author.key().as_ref(), nonce.as_bytes()],
         bump
     )]
     pub snippet: Account<'info, Snippet>,
@@ -177,6 +178,7 @@ pub struct Snippet {
     pub author: Pubkey,
     pub title: String,
     pub content_hash: String,
+    pub nonce: String,
     pub nft_minted: bool,
     pub nft_mint: Pubkey, // Store the NFT mint key
 }

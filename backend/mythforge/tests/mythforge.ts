@@ -29,7 +29,8 @@ describe('mythforge', () => {
   const program = anchor.workspace.Mythforge as Program<Mythforge>;
 
   const author = provider.wallet;
-  const title = `Test Snippet ${Date.now()}`; // Unique title to avoid PDA collisions
+  const title = `Test Snippet ${Date.now()}`;
+  const nonce = Date.now().toString(); // Use nonce for PDA
   const contentHash = 'QmTestHash1234567890abcdef1234567890abcdef12';
   const name = 'StoryWeaver NFT';
   const symbol = 'STORY';
@@ -63,10 +64,10 @@ describe('mythforge', () => {
       throw error;
     }
 
-    // Derive snippet PDA
+    // Derive snippet PDA with nonce
     try {
       [snippetPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from('snippet'), author.publicKey.toBuffer(), Buffer.from(title)],
+        [Buffer.from('snippet'), author.publicKey.toBuffer(), Buffer.from(nonce)],
         program.programId
       );
       console.log(`Snippet PDA: ${snippetPDA.toBase58()}`);
@@ -157,7 +158,7 @@ describe('mythforge', () => {
   it('Initializes a snippet', async () => {
     try {
       await program.methods
-        .initializeSnippet(title, contentHash)
+        .initializeSnippet(title, contentHash, nonce)
         .accounts({
           snippet: snippetPDA,
           author: author.publicKey,
@@ -174,6 +175,7 @@ describe('mythforge', () => {
     assert.equal(snippet.author.toBase58(), author.publicKey.toBase58());
     assert.equal(snippet.title, title);
     assert.equal(snippet.contentHash, contentHash);
+    assert.equal(snippet.nonce, nonce);
     assert.equal(snippet.nftMinted, false);
   });
 
@@ -258,13 +260,14 @@ describe('mythforge', () => {
 
   it('Fails to mint with insufficient fee', async () => {
     const newTitle = `New Snippet ${Date.now()}`;
+    const newNonce = Date.now().toString();
     const newSnippetPDA = (await PublicKey.findProgramAddress(
-      [Buffer.from('snippet'), author.publicKey.toBuffer(), Buffer.from(newTitle)],
+      [Buffer.from('snippet'), author.publicKey.toBuffer(), Buffer.from(newNonce)],
       program.programId
     ))[0];
 
     await program.methods
-      .initializeSnippet(newTitle, contentHash)
+      .initializeSnippet(newTitle, contentHash, newNonce)
       .accounts({
         snippet: newSnippetPDA,
         author: author.publicKey,

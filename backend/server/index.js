@@ -1,6 +1,6 @@
 const express = require("express");
-const { Connection, Keypair, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction, TOKEN_PROGRAM_ID } = require("@solana/web3.js");
-const { serialize } = require("borsh");
+const { Connection, Keypair, PublicKey, SystemProgram, TOKEN_PROGRAM_ID } = require("@solana/web3.js");
+const { Program, AnchorProvider, web3 } = require("@coral-xyz/anchor");
 const fs = require("fs");
 const { connectToMongo } = require("./mongo");
 
@@ -16,10 +16,20 @@ async function startServer() {
     console.log("MongoDB ready");
 
     // Initialize Solana connection
-    const connection = new Connection(process.env.DEVNET_RPC, "confirmed");
+    const connection = new Connection(process.env.DEVNET_RPC || "https://api.devnet.solana.com", "confirmed");
     const keypairBytes = JSON.parse(fs.readFileSync("./keypair.json", "utf8"));
-    const keypair = Keypair.fromSecretKey(new Uint8Array(keypairBytes));
-    const programId = new PublicKey("4kHscyfUExLgCVbDF2ivdKicf4NC9tp1SX88FGxnb7GW");
+    const serverKeypair = Keypair.fromSecretKey(new Uint8Array(keypairBytes));
+    const provider = new AnchorProvider(connection, { publicKey: serverKeypair.publicKey, signTransaction: async (tx) => tx }, { commitment: "confirmed" });
+    const idl = JSON.parse(fs.readFileSync("./mythforge.json", "utf8"));
+    const program = new Program(idl, provider);
+
+    // Load fee and platform wallets
+    const feeAccount = Keypair.fromSecretKey(
+      Uint8Array.from(JSON.parse(fs.readFileSync("../mythforge/keys/fee_account.json", "utf8")))
+    );
+    const platformWallet = new PublicKey(
+      JSON.parse(fs.readFileSync("../mythforge/keys/platform_wallet.json", "utf8"))
+    );
 
     // Health endpoint
     app.get("/health", (req, res) => {
@@ -44,46 +54,28 @@ async function startServer() {
           return res.status(400).json({ error: "Missing required fields" });
         }
         const authorPubkey = new PublicKey(author);
-        // Add timestamp as nonce to ensure unique PDA
         const nonce = Date.now().toString();
-        const snippetPDA = PublicKey.findProgramAddressSync(
+        const [snippetPDA] = PublicKey.findProgramAddressSync(
           [Buffer.from("snippet"), authorPubkey.toBuffer(), Buffer.from(nonce)],
-          programId
-        )[0];
+          program.programId
+        );
 
-        // Define instruction data schema
-        const instructionDataSchema = {
-          struct: {
-            instructionDiscriminator: { array: { type: "u8", len: 8 } },
-            title: "string",
-            contentHash: "string",
-            nonce: "string",
-          },
-        };
+        // Build transaction
+        const tx = await program.methods
+          .initializeSnippet(title, contentHash, nonce)
+          .accounts({
+            snippet: snippetPDA,
+            author: authorPubkey,
+            systemProgram: SystemProgram.programId,
+          })
+          .transaction();
 
-        // Serialize instruction data
-        const instructionData = {
-          instructionDiscriminator: [140, 135, 194, 182, 171, 195, 145, 31], // From mythforge.json
-          title,
-          contentHash,
-          nonce,
-        };
-        const serializedData = serialize(instructionDataSchema, instructionData);
-
-        // Create instruction
-        const instruction = {
-          programId,
-          keys: [
-            { pubkey: snippetPDA, isSigner: false, isWritable: true },
-            { pubkey: authorPubkey, isSigner: true, isWritable: true },
-            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-          ],
-          data: serializedData,
-        };
-
-        // Create and send transaction
-        const transaction = new Transaction().add(instruction);
-        const signature = await sendAndConfirmTransaction(connection, transaction, [keypair]);
+        // Send transaction (requires author signature from client)
+        const signature = await connection.sendRawTransaction(tx.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
+        await connection.confirmTransaction(signature, "confirmed");
 
         // Store in MongoDB
         await db.collection("snippets").insertOne({
@@ -97,6 +89,7 @@ async function startServer() {
 
         res.json({ status: "Snippet submitted", snippetPDA: snippetPDA.toString(), signature });
       } catch (error) {
+        console.error("Submit snippet error:", error);
         res.status(500).json({ error: error.message });
       }
     });
@@ -104,8 +97,8 @@ async function startServer() {
     // Mint NFT endpoint
     app.post("/mint-nft", async (req, res) => {
       try {
-        const { snippetPDA, mint, tokenAccount, author } = req.body;
-        if (!snippetPDA || !mint || !tokenAccount || !author) {
+        const { snippetPDA, mint, tokenAccount, author, name, symbol, uri } = req.body;
+        if (!snippetPDA || !mint || !tokenAccount || !author || !name || !symbol || !uri) {
           return res.status(400).json({ error: "Missing required fields" });
         }
         const snippetPubkey = new PublicKey(snippetPDA);
@@ -113,37 +106,39 @@ async function startServer() {
         const tokenAccountPubkey = new PublicKey(tokenAccount);
         const authorPubkey = new PublicKey(author);
 
-        // Define instruction data schema (no args for mint_nft)
-        const instructionDataSchema = {
-          struct: {
-            instructionDiscriminator: { array: { type: "u8", len: 8 } },
-          },
-        };
+        // Derive metadata PDA
+        const metadataProgram = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+        const [metadataPDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from("metadata"), metadataProgram.toBuffer(), mintPubkey.toBuffer()],
+          metadataProgram
+        );
 
-        // Serialize instruction data
-        const instructionData = {
-          instructionDiscriminator: [211, 57, 6, 167, 15, 219, 35, 251], // From mythforge.json
-        };
-        const serializedData = serialize(instructionDataSchema, instructionData);
+        // Build transaction
+        const tx = await program.methods
+          .mintNft(name, symbol, uri)
+          .accounts({
+            snippet: snippetPubkey,
+            nftMint: mintPubkey,
+            nftAccount: tokenAccountPubkey,
+            metadata: metadataPDA,
+            feeAccount: feeAccount.publicKey,
+            platformWallet: platformWallet,
+            author: authorPubkey,
+            authority: authorPubkey,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            metadataProgram: metadataProgram,
+            systemProgram: SystemProgram.programId,
+            rent: web3.SYSVAR_RENT_PUBKEY,
+          })
+          .signers([feeAccount])
+          .transaction();
 
-        // Create instruction
-        const instruction = {
-          programId,
-          keys: [
-            { pubkey: snippetPubkey, isSigner: false, isWritable: true },
-            { pubkey: mintPubkey, isSigner: false, isWritable: true },
-            { pubkey: tokenAccountPubkey, isSigner: false, isWritable: true },
-            { pubkey: authorPubkey, isSigner: true, isWritable: true },
-            { pubkey: authorPubkey, isSigner: true, isWritable: false }, // authority
-            { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-          ],
-          data: serializedData,
-        };
-
-        // Create and send transaction
-        const transaction = new Transaction().add(instruction);
-        const signature = await sendAndConfirmTransaction(connection, transaction, [keypair]);
+        // Send transaction (requires author signature from client)
+        const signature = await connection.sendRawTransaction(tx.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
+        await connection.confirmTransaction(signature, "confirmed");
 
         // Update MongoDB
         await db.collection("snippets").updateOne(
@@ -153,6 +148,7 @@ async function startServer() {
 
         res.json({ status: "NFT minted", signature });
       } catch (error) {
+        console.error("Mint NFT error:", error);
         res.status(500).json({ error: error.message });
       }
     });
@@ -167,32 +163,21 @@ async function startServer() {
         const snippetPubkey = new PublicKey(snippetPDA);
         const tokenAccountPubkey = new PublicKey(tokenAccount);
 
-        // Define instruction data schema (no args for read_snippet)
-        const instructionDataSchema = {
-          struct: {
-            instructionDiscriminator: { array: { type: "u8", len: 8 } },
-          },
-        };
+        // Build transaction
+        const tx = await program.methods
+          .readSnippet()
+          .accounts({
+            snippet: snippetPubkey,
+            nftAccount: tokenAccountPubkey,
+          })
+          .transaction();
 
-        // Serialize instruction data
-        const instructionData = {
-          instructionDiscriminator: [129, 242, 108, 215, 237, 30, 115, 185], // From mythforge.json
-        };
-        const serializedData = serialize(instructionDataSchema, instructionData);
-
-        // Create instruction
-        const instruction = {
-          programId,
-          keys: [
-            { pubkey: snippetPubkey, isSigner: false, isWritable: false },
-            { pubkey: tokenAccountPubkey, isSigner: false, isWritable: false },
-          ],
-          data: serializedData,
-        };
-
-        // Create and send transaction
-        const transaction = new Transaction().add(instruction);
-        const signature = await sendAndConfirmTransaction(connection, transaction, [keypair]);
+        // Send transaction
+        const signature = await connection.sendRawTransaction(tx.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
+        await connection.confirmTransaction(signature, "confirmed");
 
         // Fetch snippet data from MongoDB
         const snippet = await db.collection("snippets").findOne({ snippetPDA: snippetPDA });
@@ -202,6 +187,7 @@ async function startServer() {
 
         res.json({ status: "Snippet accessible", snippet, signature });
       } catch (error) {
+        console.error("Read snippet error:", error);
         res.status(500).json({ error: error.message });
       }
     });
