@@ -256,7 +256,7 @@ describe('mythforge', () => {
     }
   });
 
-  it.skip('Fails to mint with insufficient fee', async () => {
+  it('Fails to mint with insufficient fee', async () => {
     const newTitle = `New Snippet ${Date.now()}`;
     const newSnippetPDA = (await PublicKey.findProgramAddress(
       [Buffer.from('snippet'), author.publicKey.toBuffer(), Buffer.from(newTitle)],
